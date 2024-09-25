@@ -59,7 +59,7 @@ def run(args: argparse.Namespace) -> None:
         fig.savefig(args.dest)
 
     if not args.headless:
-        plt.show()
+        plt.savefig('plot.png')
 
 
 def get_args() -> argparse.Namespace:

@@ -40,6 +40,7 @@ from torch.utils.data import DataLoader
 from dataset import SliceDataset
 from ShallowNet import shallowCNN
 from ENet import ENet
+from transformer import MaskFormer
 from utils import (Dcm,
                    class2one_hot,
                    probs2one_hot,
@@ -65,7 +66,10 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
     print(f">> Picked {device} to run experiments")
 
     K: int = datasets_params[args.dataset]['K']
-    net = datasets_params[args.dataset]['net'](1, K)
+    if args.architecture == 'transformer':
+        net = MaskFormer()
+    else:
+        net = datasets_params[args.dataset]['net'](1, K)
     net.init_weights()
     net.to(device)
 
@@ -174,13 +178,21 @@ def runTraining(args):
                     B, _, W, H = img.shape
 
                     pred_logits = net(img)
-                    pred_probs = F.softmax(1 * pred_logits, dim=1)  # 1 is the temperature parameter
+                    
+                    if args.architecture == 'transformer':
+                        pred_seg = pred_logits
+                        # print(gt[:,0], pred_seg[:,0])
 
-                    # Metrics computation, not used for training
-                    pred_seg = probs2one_hot(pred_probs)
+                    else:
+                        pred_probs = F.softmax(1 * pred_logits, dim=1)  # 1 is the temperature parameter
+
+                        # Metrics computation, not used for training
+                        pred_seg = probs2one_hot(pred_probs)
+
                     log_dice[e, j:j + B, :] = dice_coef(gt, pred_seg)  # One DSC value per sample and per class
 
                     loss = loss_fn(pred_probs, gt)
+                    
                     log_loss[e, i] = loss.item()  # One loss value per batch (averaged in the loss)
 
                     if opt:  # Only for training
@@ -232,6 +244,7 @@ def main():
 
     parser.add_argument('--epochs', default=200, type=int)
     parser.add_argument('--dataset', default='TOY2', choices=datasets_params.keys())
+    parser.add_argument('--architecture', default='ENet', choices=['ENet', 'transformer'])
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights).")

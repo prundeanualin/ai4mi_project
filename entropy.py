@@ -9,7 +9,7 @@ if __name__ == "__main__":
         H = p * (-np.log2(p)) + (1 - p) * (- np.log2(1 - p))
 
         plt.plot(p, H)
-        plt.show()
+        plt.savefig('entropy1.png')
 
         CE = lambda y_, p_: y_ * (- np.log2(p_)) + (1 - y_) * (- np.log2(1 - p_))
 
@@ -26,4 +26,4 @@ if __name__ == "__main__":
         ax.plot_wireframe(Ys, Ys, CE(Ys, Ys), color='red')
 
         ax.plot_wireframe(Ys, 1 - Ys, CE(Ys, 1 - Ys), color='green')
-        plt.show()
+        plt.savefig('entropy2.png')
