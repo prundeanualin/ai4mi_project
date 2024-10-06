@@ -29,6 +29,8 @@ from torch import Tensor
 from PIL import Image
 from torch.utils.data import Dataset
 
+from slice_segthor import get_splits
+import torchio as tio
 
 def make_dataset(root, subset) -> list[tuple[Path, Path]]:
     assert subset in ['train', 'val', 'test']
@@ -75,14 +77,34 @@ class SliceDataset(Dataset):
 
     def __getitem__(self, index) -> dict[str, Union[Tensor, int, str]]:
         img_path, gt_path = self.files[index]
-
         img: Tensor = self.img_transform(Image.open(img_path))
         gt: Tensor = self.gt_transform(Image.open(gt_path))
-
         _, W, H = img.shape
         K, _, _ = gt.shape
         assert gt.shape == (K, W, H)
-
         return {"images": img,
                 "gts": gt,
                 "stems": img_path.stem}
+
+def get_subjectlist():
+    src_path: Path = Path('./data/data/segthor_train')
+    training_ids: list[str]
+    validation_ids: list[str]
+    training_ids, validation_ids, _ = get_splits(src_path, 25, 0)
+    train_list = []
+    val_list = []
+    for patient in training_ids:
+        subject = tio.Subject(
+            img=tio.Image(f'./data/data/segthor_train/train/{patient}/{patient}.nii.gz'),
+            gt=tio.LabelMap(f'./data/data/segthor_train/train/{patient}/GT.nii.gz'),
+            name=patient
+        )
+        train_list.append(subject)
+    for patient in validation_ids: 
+        subject = tio.Subject(
+            img=tio.ScalarImage(f'./data/data/segthor_train/train/{patient}/{patient}.nii.gz'),
+            gt=tio.LabelMap(f'./data/data/segthor_train/train/{patient}/GT.nii.gz'),
+            name=patient
+        )
+        val_list.append(subject)
+    return train_list, val_list

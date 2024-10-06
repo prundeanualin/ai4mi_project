@@ -38,9 +38,9 @@ import numpy as np
 import torch.nn.functional as F
 from torch import nn, Tensor
 from torchvision import transforms
-from torch.utils.data import DataLoader
+#from torch.utils.data import DataLoader
 
-from dataset import SliceDataset
+from dataset import SliceDataset, get_subjectlist
 from ShallowNet import shallowCNN
 from ENet import ENet
 from utils import (Dcm,
@@ -53,6 +53,7 @@ from utils import (Dcm,
                    prepare_wandb_login)
 
 from losses import create_loss_fn
+import torchio as tio
 
 import wandb #TODO: remove all wandb instances on final submission
 
@@ -63,7 +64,7 @@ datasets_params["TOY2"] = {'K': 2, 'net': shallowCNN, 'B': 2}
 datasets_params["SEGTHOR"] = {'K': 5, 'net': ENet, 'B': 8}
 
 
-def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
+def setup(args) -> tuple[nn.Module, Any, Any, tio.SubjectsLoader, tio.SubjectsLoader, int]:
     # Networks and scheduler
     gpu: bool = args.gpu and torch.cuda.is_available()
     device = torch.device("cuda") if gpu else torch.device("cpu")
@@ -87,48 +88,67 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
         root_dir = Path(tmpdir+"/data") / args.dataset
     else:
         root_dir = Path("data") / args.dataset
+    train_list, val_list = get_subjectlist()
+    transforms = [
+        tio.ToCanonical(),
+        tio.Resample(1),
+        tio.ZNormalization(masking_method=tio.ZNormalization.mean),
+        tio.Crop((0, 0, 10, 30, 40, 40)),
+        tio.RandomMotion(degrees=10, translation=10, num_transforms=2),
+    ]
+    transform = tio.Compose(transforms)
 
-    img_transform = transforms.Compose([
-        lambda img: img.convert('L'),
-        lambda img: np.array(img)[np.newaxis, ...],
-        lambda nd: nd / 255,  # max <= 1
-        lambda nd: torch.tensor(nd, dtype=torch.float32)
-    ])
+    # gt_transform = transforms.Compose([
+    #     lambda img: np.array(img)[...],
+    #     # The idea is that the classes are mapped to {0, 255} for binary cases
+    #     # {0, 85, 170, 255} for 4 classes
+    #     # {0, 51, 102, 153, 204, 255} for 6 classes
+    #     # Very sketchy but that works here and that simplifies visualization
+    #     lambda nd: nd / (255 / (K - 1)) if K != 5 else nd / 63,  # max <= 1
+    #     lambda nd: torch.tensor(nd, dtype=torch.int64)[None, ...],  # Add one dimension to simulate batch
+    #     lambda t: class2one_hot(t, K=K),
+    #     itemgetter(0)
+    # ])
 
-    gt_transform = transforms.Compose([
-        lambda img: np.array(img)[...],
-        # The idea is that the classes are mapped to {0, 255} for binary cases
-        # {0, 85, 170, 255} for 4 classes
-        # {0, 51, 102, 153, 204, 255} for 6 classes
-        # Very sketchy but that works here and that simplifies visualization
-        lambda nd: nd / (255 / (K - 1)) if K != 5 else nd / 63,  # max <= 1
-        lambda nd: torch.tensor(nd, dtype=torch.int64)[None, ...],  # Add one dimension to simulate batch
-        lambda t: class2one_hot(t, K=K),
-        itemgetter(0)
-    ])
+    # train_set = SliceDataset('train',
+    #                          root_dir,
+    #                          img_transform=img_transform,
+    #                          gt_transform=gt_transform,
+    #                          debug=args.debug,
+    #                          remove_unannotated=args.remove_unannotated)
+    # train_loader = tio.SubjectsLoader(train_set,
+    #                           batch_size=B,
+    #                           num_workers=args.num_workers,
+    #                           shuffle=True)
 
-    train_set = SliceDataset('train',
-                             root_dir,
-                             img_transform=img_transform,
-                             gt_transform=gt_transform,
-                             debug=args.debug,
-                             remove_unannotated=args.remove_unannotated)
-    train_loader = DataLoader(train_set,
-                              batch_size=B,
-                              num_workers=args.num_workers,
-                              shuffle=True)
+    # val_set = SliceDataset('val',
+    #                        root_dir,
+    #                        img_transform=img_transform,
+    #                        gt_transform=gt_transform,
+    #                        debug=args.debug,
+    #                        remove_unannotated=args.remove_unannotated)
+    # val_loader = tio.SubjectsLoader(val_set,
+    #                         batch_size=B,
+    #                         num_workers=args.num_workers,
+    #                         shuffle=False)
+    train_loader = tio.SubjectsLoader(
+        tio.SubjectsDataset(train_list, transform=transform),
+        batch_size=B,
+        num_workers=args.num_workers,
+        shuffle=True
+    )
 
-    val_set = SliceDataset('val',
-                           root_dir,
-                           img_transform=img_transform,
-                           gt_transform=gt_transform,
-                           debug=args.debug,
-                           remove_unannotated=args.remove_unannotated)
-    val_loader = DataLoader(val_set,
-                            batch_size=B,
-                            num_workers=args.num_workers,
-                            shuffle=False)
-
+    val_loader = tio.SubjectsLoader(
+        tio.SubjectsDataset(val_list, transform=transform),
+        batch_size=B,
+        num_workers=args.num_workers,
+        shuffle=False
+    )
+    # for subjects_batch in train_loader:
+    #     inputs = subjects_batch['img'][tio.DATA]
+    #     target = subjects_batch['GT'][tio.DATA]
+    #     print(inputs)
+    #     raise ValueError("Debugging")
     args.dest.mkdir(parents=True, exist_ok=True)
 
     return (net, optimizer, device, train_loader, val_loader, K)
