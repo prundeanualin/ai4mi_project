@@ -23,12 +23,15 @@
 # SOFTWARE.
 
 import argparse
+import multiprocessing
+import time
 import warnings
 from typing import Any
 from pathlib import Path
 from pprint import pprint
 from operator import itemgetter
 from shutil import copytree, rmtree
+from os import environ
 
 import torch
 import numpy as np
@@ -37,6 +40,7 @@ from torch import nn, Tensor
 from torchvision import transforms
 from torch.utils.data import DataLoader
 
+import utils
 from dataset import SliceDataset
 from ShallowNet import shallowCNN
 from ENet import ENet
@@ -47,10 +51,12 @@ from utils import (Dcm,
                    probs2class,
                    tqdm_,
                    dice_coef,
-                   save_images)
+                   save_images,
+                   prepare_wandb_login)
 
-from losses import (CrossEntropy)
+from losses import create_loss_fn
 
+import wandb #TODO: remove all wandb instances on final submission
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -78,7 +84,11 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
 
     # Dataset part
     B: int = datasets_params[args.dataset]['B']
-    root_dir = Path("data") / args.dataset
+    if args.scratch:
+        tmpdir = environ["TMPDIR"]
+        root_dir = Path(tmpdir+"/data") / args.dataset
+    else:
+        root_dir = Path("data") / args.dataset
 
     img_transform = transforms.Compose([
         lambda img: img.convert('L'),
@@ -103,7 +113,8 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
                              root_dir,
                              img_transform=img_transform,
                              gt_transform=gt_transform,
-                             debug=args.debug)
+                             debug=args.debug,
+                             remove_unannotated=args.remove_unannotated)
     train_loader = DataLoader(train_set,
                               batch_size=B,
                               num_workers=args.num_workers,
@@ -113,7 +124,8 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
                            root_dir,
                            img_transform=img_transform,
                            gt_transform=gt_transform,
-                           debug=args.debug)
+                           debug=args.debug,
+                           remove_unannotated=args.remove_unannotated)
     val_loader = DataLoader(val_set,
                             batch_size=B,
                             num_workers=args.num_workers,
@@ -125,15 +137,12 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
 
 
 def runTraining(args):
-    print(f">>> Setting up to train on {args.dataset} with {args.mode}")
+
+    start = time.time()
+    print(f">>> Setting up to train on {args.dataset} with {args.model}")
     net, optimizer, device, train_loader, val_loader, K = setup(args)
 
-    if args.mode == "full":
-        loss_fn = CrossEntropy(idk=list(range(K)))  # Supervise both background and foreground
-    elif args.mode in ["partial"] and args.dataset in ['SEGTHOR', 'SEGTHOR_STUDENTS']:
-        loss_fn = CrossEntropy(idk=[0, 1, 3, 4])  # Do not supervise the heart (class 2)
-    else:
-        raise ValueError(args.mode, args.dataset)
+    loss_fn = create_loss_fn(args, K)
 
     # Notice one has the length of the _loader_, and the other one of the _dataset_
     log_loss_tra: Tensor = torch.zeros((args.epochs, len(train_loader)))
@@ -142,6 +151,7 @@ def runTraining(args):
     log_dice_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset), K))
 
     best_dice: float = 0
+    best_metrics = {}
 
     for e in range(args.epochs):
         for m in ['train', 'val']:
@@ -219,11 +229,10 @@ def runTraining(args):
                                          for k in range(1, K)}
                     tq_iter.set_postfix(postfix_dict)
 
-        # I save it at each epochs, in case the code crashes or I decide to stop it early
-        np.save(args.dest / "loss_tra.npy", log_loss_tra)
-        np.save(args.dest / "dice_tra.npy", log_dice_tra)
-        np.save(args.dest / "loss_val.npy", log_loss_val)
-        np.save(args.dest / "dice_val.npy", log_dice_val)
+        metrics = utils.save_loss_and_metrics(K, e, args.dest,
+                                              loss=[log_loss_tra, log_loss_val],
+                                              dice=[log_dice_tra, log_dice_val])
+        wandb.log(metrics)
 
         current_dice: float = log_dice_val[e, :, 1:].mean().item()
         if current_dice > best_dice:
@@ -239,6 +248,12 @@ def runTraining(args):
 
             torch.save(net, args.dest / "bestmodel.pkl")
             torch.save(net.state_dict(), args.dest / "bestweights.pt")
+            best_metrics = metrics
+
+    for key, value in best_metrics.items():
+        wandb.run.summary[key] = value
+    end = time.time()
+    print(f"[FINISHED] Duration: {(end - start):0.2f} s")
 
 
 def main():
@@ -248,6 +263,7 @@ def main():
     parser.add_argument('--dataset', default='TOY2', choices=datasets_params.keys())
     parser.add_argument('--architecture', default='ENet', choices=['ENet', 'transformer'])
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
+    parser.add_argument('--args', default='')
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights).")
 
@@ -256,11 +272,46 @@ def main():
     parser.add_argument('--debug', action='store_true',
                         help="Keep only a fraction (10 samples) of the datasets, "
                              "to test the logic around epochs and logging easily.")
+    
+    parser.add_argument('--alpha', type=float, default=0.5, help="Alpha parameter for loss functions")
+    parser.add_argument('--beta', type=float, default=0.5, help="Beta parameter for loss functions")
+    parser.add_argument('--focal_alpha', type=float, default=0.25, help="Alpha parameter for Focal Loss")
+    parser.add_argument('--focal_gamma', type=float, default=2.0, help="Gamma parameter for Focal Loss")
+    parser.add_argument('--dropoutRate', type=float, default=0.1, help="Dropout rate for the ENet model")
+
+    # Optimize snellius batch job
+    parser.add_argument('--scratch', action='store_true', help="Use the scratch folder of snellius")
+
+    # Arguments for more flexibility of the run
+    parser.add_argument('--remove_unannotated', action='store_true', help="Remove the unannotated images")
+    parser.add_argument('--loss', default='CrossEntropy', choices=['CrossEntropy', 'Dice', 'FocalLoss', 'CombinedLoss', 'FocalDiceLoss', 'TverskyLoss'])
+    parser.add_argument('--model', type=str, default='ENet', choices=['ENet', 'shallowCNN'])
+    parser.add_argument('--run_prefix', type=str, default='', help='Name to prepend to the run name')
+    parser.add_argument('--run_group', type=str, default=None, help='Your name so that the run can be grouped by it')
 
     args = parser.parse_args()
+    prefix = args.run_prefix + '_' if args.run_prefix else ''
+    run_name = f'{prefix}{args.loss}_{args.model}_{args.dataset[:3]}'
+    run_name = 'DEBUG_' + run_name if args.debug else run_name
+    args.dest = args.dest / run_name
 
+    # Added since for python 3.8+, OS X multiprocessing starts processes with spawn instead of fork
+    # see https://github.com/pytest-dev/pytest-flask/issues/104
+    multiprocessing.set_start_method("fork")
+
+    prepare_wandb_login()
+    wandb.login()
+    wandb.init(
+        entity="ai_4_mi",
+        project="SegTHOR",
+        name=run_name,
+        config=vars(args),
+        mode="disabled" if args.debug else "online",
+        group=args.run_group
+    )
+
+    print(f">> {run_name} <<")
     pprint(args)
-
     runTraining(args)
 
 
