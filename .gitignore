@@ -10,3 +10,5 @@ grad_figs/*.png
 output/*
 jobs/*
 environment.yaml
+wandb/*
+wandb.password
