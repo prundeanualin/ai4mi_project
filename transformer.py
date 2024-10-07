@@ -99,12 +99,10 @@ class MaskFormer(nn.Module):
                 )
                 pred_segs = [torch.zeros(1, input.size(2), input.size(3)) for _ in range(input.size(0))]
                 for i in range(len(predicted_semantic_maps)):
-                        # print(dict)
                         dict = predicted_semantic_maps[i]
                         predicted_semantic_map = dict['segmentation']
                         info = dict['segments_info']
                         if info:
-                                # print(info)
                                 for inf in info:
                                         pred_segs[i] = torch.cat((pred_segs[i], torch.where(predicted_semantic_map == inf['id'], inf['label_id'], 0).unsqueeze(0)), dim=0)
                         pred_segs[i] = torch.max(pred_segs[i], dim=0)[0]

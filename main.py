@@ -170,14 +170,6 @@ def runTraining(args):
                     img = data['images'].to(device)
                     gt = data['gts'].to(device)
 
-                    # print('truth', gt.size())
-                    # print(torch.unique(gt[0][0]), torch.unique(gt[0][1]), torch.unique(gt[0][2]), torch.unique(gt[0][3]), torch.unique(gt[0][4]))
-                    # print('image size', img.size())
-                    # for i in range(gt.size(dim=1)):
-                    #     gt[:,i] *= i
-                    # gt = torch.max(gt, dim=1)[0]
-                    # print('gt:',gt.size())
-
                     if opt:  # So only for training
                         opt.zero_grad()
 
@@ -187,13 +179,8 @@ def runTraining(args):
 
                     if args.architecture == 'transformer':
                         outputs, predicted_class = net(img, gt)
-                        # print('gt size:',gt.size())
-                        # print('pred size:', pred_seg.size())
-                        
+
                         loss = outputs.loss
-                        #dice workaround
-                        # log_dice[e, j:j + B, :] = 0.
-                        # pred_seg = F.one_hot(predicted_class.long(),num_classes=5)
                         pred_seg = class2one_hot(predicted_class.to(torch.int64).to(device), 5)
 
                     else:
