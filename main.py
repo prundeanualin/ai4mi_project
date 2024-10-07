@@ -170,6 +170,14 @@ def runTraining(args):
                     img = data['images'].to(device)
                     gt = data['gts'].to(device)
 
+                    # print('truth', gt.size())
+                    # print(torch.unique(gt[0][0]), torch.unique(gt[0][1]), torch.unique(gt[0][2]), torch.unique(gt[0][3]), torch.unique(gt[0][4]))
+                    # print('image size', img.size())
+                    # for i in range(gt.size(dim=1)):
+                    #     gt[:,i] *= i
+                    # gt = torch.max(gt, dim=1)[0]
+                    # print('gt:',gt.size())
+
                     if opt:  # So only for training
                         opt.zero_grad()
 
@@ -177,21 +185,27 @@ def runTraining(args):
                     assert 0 <= img.min() and img.max() <= 1
                     B, _, W, H = img.shape
 
-                    pred_logits = net(img)
-                    
                     if args.architecture == 'transformer':
-                        pred_seg = pred_logits
-                        # print(gt[:,0], pred_seg[:,0])
+                        outputs, predicted_class = net(img, gt)
+                        # print('gt size:',gt.size())
+                        # print('pred size:', pred_seg.size())
+                        
+                        loss = outputs.loss
+                        #dice workaround
+                        # log_dice[e, j:j + B, :] = 0.
+                        # pred_seg = F.one_hot(predicted_class.long(),num_classes=5)
+                        pred_seg = class2one_hot(predicted_class.to(torch.int64).to(device), 5)
 
                     else:
+                        pred_logits = net(img)
                         pred_probs = F.softmax(1 * pred_logits, dim=1)  # 1 is the temperature parameter
-
-                        # Metrics computation, not used for training
+                        loss = loss_fn(pred_probs, gt)
                         pred_seg = probs2one_hot(pred_probs)
 
+                        # Metrics computation, not used for training
+                    
                     log_dice[e, j:j + B, :] = dice_coef(gt, pred_seg)  # One DSC value per sample and per class
 
-                    loss = loss_fn(pred_probs, gt)
                     
                     log_loss[e, i] = loss.item()  # One loss value per batch (averaged in the loss)
 
@@ -202,7 +216,8 @@ def runTraining(args):
                     if m == 'val':
                         with warnings.catch_warnings():
                             warnings.filterwarnings('ignore', category=UserWarning)
-                            predicted_class: Tensor = probs2class(pred_probs)
+                            if args.architecture != 'transformer':
+                                predicted_class: Tensor = probs2class(pred_probs)
                             mult: int = 63 if K == 5 else (255 / (K - 1))
                             save_images(predicted_class * mult,
                                         data['stems'],
