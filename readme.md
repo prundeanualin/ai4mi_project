@@ -72,16 +72,43 @@ The data can be viewed in different ways:
 Running a training
 ```
 $ python main.py --help
-usage: main.py [-h] [--epochs EPOCHS] [--dataset {TOY2,SEGTHOR}] [--mode {partial,full}] --dest DEST [--gpu] [--debug]
+
+usage: main.py [-h] [--epochs EPOCHS] [--dataset {TOY2,SEGTHOR}] [--mode {partial,full}] --dest DEST [--seed SEED] [--num_workers NUM_WORKERS] [--gpu] [--debug] [--evaluation] 
+               [--dropoutRate DROPOUTRATE] [--lr LR] [--lr_weight_decay LR_WEIGHT_DECAY] [--enable_lr_scheduler] [--alpha ALPHA] [--beta BETA] [--focal_alpha FOCAL_ALPHA] 
+               [--focal_gamma FOCAL_GAMMA] [--scratch] [--dry_run] [--run_on_mac] [--remove_unannotated] [--loss {CrossEntropy,Dice,FocalLoss,CombinedLoss,FocalDiceLoss,TverskyLoss}] 
+               [--model {ENet,shallowCNN,UNet,UNetPlusPlus,DeepLabV3Plus}] [--run_prefix RUN_PREFIX] [--run_group RUN_GROUP] 
+               [--encoder_name {resnet18,resnet34,resnet50,resnet101,resnet152}] [--unfreeze_enc_last_n_layers UNFREEZE_ENC_LAST_N_LAYERS]
 
 options:
   -h, --help            show this help message and exit
   --epochs EPOCHS
-  --dataset {TOY2,SEGTHOR}
-  --mode {partial,full}
-  --dest DEST           Destination directory to save the results (predictions and weights).
+  --dataset                          {TOY2,SEGTHOR}
+  --mode                             {partial,full}
+  --dest DEST                        Destination directory to save the results (predictions and weights). If in evaluation mode, then this is the directory where the results are saved.
+  --seed SEED                        Random seed to use for reproducibility of the experiments
+  --num_workers                      How many workers to be assigned to the dataloader
   --gpu
-  --debug               Keep only a fraction (10 samples) of the datasets, to test the logic around epochs and logging easily.
+  --debug                            Keep only a fraction (10 samples) of the datasets, to test the logic around epochs and logging easily.
+  --evaluation                       Will load the model from the dest_results and evaluate it on the validation set, with all the available metrics.
+  --dropoutRate                      Dropout rate for the ENet model
+  --lr LR                            Learning rate
+  --lr_weight_decay                  Weight decay factor for the AdamW optimizer
+  --enable_lr_scheduler              Enable the OneCycle LR scheduler
+  --alpha                            Alpha parameter for loss functions
+  --beta                             Beta parameter for loss functions
+  --focal_alpha                      Alpha parameter for Focal Loss
+  --focal_gamma                      Gamma parameter for Focal Loss
+  --scratch                          Use the scratch folder of snellius
+  --dry_run                          Disable saving the image validation results on every epoch
+  --run_on_mac                       If code runs on mac cpu, some extra configuration needs to be done
+  --remove_unannotated               Remove the unannotated images
+  --loss                             {CrossEntropy,Dice,FocalLoss,CombinedLoss,FocalDiceLoss,TverskyLoss}
+  --model                            {ENet,shallowCNN,UNet,UNetPlusPlus,DeepLabV3Plus}
+  --run_prefix                       Name to prepend to the run name
+  --encoder_name                     {resnet18,resnet34,resnet50,resnet101,resnet152}
+  --unfreeze_enc_last_n_layers       Train the last n layers of the encoder
+
+
 $ python main.py --dataset TOY2 --mode full --epoch 25 --dest results/toy2/ce --gpu
 ```
 
@@ -89,6 +116,17 @@ The codebase uses a lot of assertions for control and self-documentation, they c
 ```
 $ python -O main.py --dataset TOY2 --mode full --epoch 25 --dest results/toy2/ce --gpu
 ```
+
+### Evaluating a network
+
+Running the evaluation of a saved model on the validation set
+```
+$ python main.py --gpu --evaluation --dataset <chosen_dataset> --dest <checkpoint_path> --model <chosen_model>
+```
+Where:
+- `chosen_dataset` - decides the dataset to run the evaluation on
+- `checkpoint_path` - path from the project root to the folder that contains the saved checkpoint of the model.
+- `chosen_model` - the model to load from the checkpoint file
 
 ### Viewing the results
 #### 2D viewer
