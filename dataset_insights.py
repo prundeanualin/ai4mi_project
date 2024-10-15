@@ -25,9 +25,13 @@ gt_transform = transforms.Compose([
 
 root_dir = Path("data") / "SEGTHOR"
 train_set = SliceDataset('train', root_dir, img_transform=transform, gt_transform=gt_transform, remove_unannotated=True)
-
+val_set = SliceDataset('val', root_dir, img_transform=transform, gt_transform=gt_transform, remove_unannotated=True)
 counts = torch.zeros(4)
 for image in tqdm(train_set):
+    gt = image["gts"].sum(dim=(1,2))
+    counts[gt[1:]>0] += 1
+
+for image in tqdm(val_set):
     gt = image["gts"].sum(dim=(1,2))
     counts[gt[1:]>0] += 1
 
