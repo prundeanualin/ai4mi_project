@@ -175,6 +175,7 @@ def run_model(args):
     ahd_val: Tensor = per_sample_and_class(val_loader)
     assd_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset)))
 
+    predicted_segmentations = torch.zeros((len(val_loader.dataset), 5, 256, 256))
     best_dice: float = 0
     best_metrics = {}
 
@@ -224,6 +225,8 @@ def run_model(args):
 
                     # Metrics computation, not used for training
                     pred_seg = probs2one_hot(pred_probs)
+                    predicted_segmentations[j:j + B] = deepcopy(pred_seg)
+
                     # One metric value (DSC, Jaccard, Precision, Recall) per sample and per class
                     dice[e, j:j + B, :] = dice_coef(gt, pred_seg)
                     jaccard[e, j:j + B, :] = jaccard_coef(gt, pred_seg)
@@ -299,7 +302,8 @@ def run_model(args):
 
         current_dice: float = dice_val[e, :, 1:].mean().item()
         if args.evaluation:
-            print(f">>> Evaluation Dice avg on validation: {current_dice:05.3f}")
+            print(f">>> Evaluating Dice avg on validation: {current_dice:05.3f}")
+            np.save(args.dest / "predicted_segmentations.npy", predicted_segmentations)
         elif current_dice > best_dice:
             print(f">>> Improved dice at epoch {e}: {best_dice:05.3f}->{current_dice:05.3f} DSC")
             best_dice = current_dice
