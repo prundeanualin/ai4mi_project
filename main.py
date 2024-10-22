@@ -167,13 +167,14 @@ def run_model(args):
 
     log_loss_tra, log_loss_val = per_batch(train_loader), per_batch(val_loader)
     dice_tra, dice_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-    # Extra metrics to monitor training
-    precision_tra, precision_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-    recall_tra, recall_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-    jacc_tra, jacc_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-    # Validation metrics (too expensive to apply on every sample during train)
-    ahd_val: Tensor = per_sample_and_class(val_loader)
-    assd_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset)))
+    if args.all_metrics:
+        # Extra metrics to monitor training
+        precision_tra, precision_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
+        recall_tra, recall_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
+        jacc_tra, jacc_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
+        # Validation metrics (too expensive to apply on every sample during train)
+        ahd_val: Tensor = per_sample_and_class(val_loader)
+        assd_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset)))
 
     best_dice: float = 0
     best_metrics = {}
@@ -189,9 +190,10 @@ def run_model(args):
                     loader = train_loader
                     log_loss = log_loss_tra
                     dice = dice_tra
-                    precision = precision_tra
-                    recall = recall_tra
-                    jaccard = jacc_tra
+                    if args.all_metrics:
+                        precision = precision_tra
+                        recall = recall_tra
+                        jaccard = jacc_tra
 
                 case 'val':
                     net.eval()
@@ -201,9 +203,10 @@ def run_model(args):
                     loader = val_loader
                     log_loss = log_loss_val
                     dice = dice_val
-                    precision = precision_val
-                    recall = recall_val
-                    jaccard = jacc_val
+                    if args.all_metrics:
+                        precision = precision_val
+                        recall = recall_val
+                        jaccard = jacc_val
 
             with cm():  # Either dummy context manager, or the torch.no_grad for validation
                 j = 0
@@ -226,9 +229,10 @@ def run_model(args):
                     pred_seg = probs2one_hot(pred_probs)
                     # One metric value (DSC, Jaccard, Precision, Recall) per sample and per class
                     dice[e, j:j + B, :] = dice_coef(gt, pred_seg)
-                    jaccard[e, j:j + B, :] = jaccard_coef(gt, pred_seg)
-                    precision[e, j:j + B, :] = compute_precision(gt, pred_seg)
-                    recall[e, j:j + B, :] = compute_recall(gt, pred_seg)
+                    if args.all_metrics:
+                        jaccard[e, j:j + B, :] = jaccard_coef(gt, pred_seg)
+                        precision[e, j:j + B, :] = compute_precision(gt, pred_seg)
+                        recall[e, j:j + B, :] = compute_recall(gt, pred_seg)
 
                     pred_seg = pred_seg.to(device)
                     gt = gt.to(device)
@@ -256,16 +260,17 @@ def run_model(args):
                                     batch_idx].shape, "Shape mismatch between GT and prediction"  # Check that the shapes are identical
 
                                 # Computing AHD per class for each batch
-                                ahd_values_per_class = average_hausdorff_distance_per_class(gt[batch_idx],
-                                                                                            pred_seg[batch_idx], K)
-                                for k in range(K):
-                                    if ahd_values_per_class[k] != float('inf'):  # Skipping 'inf' values
-                                        ahd_val[e, j + batch_idx, k] = ahd_values_per_class[k]
+                                if args.all_metrics:
+                                    ahd_values_per_class = average_hausdorff_distance_per_class(gt[batch_idx],
+                                                                                                pred_seg[batch_idx], K)
+                                    for k in range(K):
+                                        if ahd_values_per_class[k] != float('inf'):  # Skipping 'inf' values
+                                            ahd_val[e, j + batch_idx, k] = ahd_values_per_class[k]
 
                                 # ahd_value = average_hausdorff_distance(gt[batch_idx], pred_seg[batch_idx]) #Old AHD metric
                                 # log_ahd[e, j + batch_idx, :] = ahd_value
-                                assd_sample_value = average_symmetric_surface_distance(gt[batch_idx], pred_seg[batch_idx])
-                                assd_val[e, j + batch_idx] = assd_sample_value
+                                    assd_sample_value = average_symmetric_surface_distance(gt[batch_idx], pred_seg[batch_idx])
+                                    assd_val[e, j + batch_idx] = assd_sample_value
 
                         # Save the predictions for the validation set
                         if not args.dry_run:
@@ -287,14 +292,19 @@ def run_model(args):
                                          for k in range(1, K)}
                     tq_iter.set_postfix(postfix_dict)
 
-        metrics = utils.save_loss_and_metrics(K, e, args.dest,
-                                              loss=[log_loss_tra, log_loss_val],
-                                              dice=[dice_tra, dice_val],
-                                              jaccard=[jacc_tra, jacc_val],
-                                              precision=[precision_tra, precision_val],
-                                              recall=[recall_tra, recall_val],
-                                              ahd_validation=ahd_val,
-                                              assd_validation=assd_val)
+        if args.all_metrics:
+            metrics = utils.save_loss_and_metrics(K, e, args.dest,
+                                                loss=[log_loss_tra, log_loss_val],
+                                                dice=[dice_tra, dice_val],
+                                                jaccard=[jacc_tra, jacc_val],
+                                                precision=[precision_tra, precision_val],
+                                                recall=[recall_tra, recall_val],
+                                                ahd_validation=ahd_val,
+                                                assd_validation=assd_val)
+        else:
+            metrics = utils.save_loss_and_metrics(K, e, args.dest,
+                                                loss=[log_loss_tra, log_loss_val],
+                                                dice=[dice_tra, dice_val])
         wandb.log(metrics)
 
         current_dice: float = dice_val[e, :, 1:].mean().item()
@@ -317,6 +327,14 @@ def run_model(args):
             torch.save(net.state_dict(), best_weights_path)
             utils.wandb_save_model(args.disable_wandb, best_weights_path, {'Epoch': e, 'Dice Validation Avg': best_dice})
             best_metrics = metrics
+            # Reset patience counter for early stopping
+            patience = args.patience
+        elif args.patience:
+            # Used in early stopping
+            patience -= 1
+            if patience == 0:
+                print("Early Stopping patience reached.")
+                break
 
     for key, value in best_metrics.items():
         wandb.run.summary[key] = value
@@ -349,16 +367,18 @@ def main():
     parser.add_argument('--lr_weight_decay', type=float, default=0.1, help="Weight decay factor for the AdamW optimizer")
     parser.add_argument('--enable_lr_scheduler', action='store_true')
 
-    parser.add_argument('--alpha', type=float, default=0.5, help="Alpha parameter for loss functions")
-    parser.add_argument('--beta', type=float, default=0.5, help="Beta parameter for loss functions")
+    parser.add_argument('--alpha', type=float, default=0.7, help="Alpha parameter for loss functions")
+    parser.add_argument('--beta', type=float, default=0.3, help="Beta parameter for loss functions")
     parser.add_argument('--focal_alpha', type=float, default=0.25, help="Alpha parameter for Focal Loss")
     parser.add_argument('--focal_gamma', type=float, default=2.0, help="Gamma parameter for Focal Loss")
+    parser.add_argument('--patience', type=int, default=None, help="Patience for early stopping")
 
     # Optimize snellius batch job
     parser.add_argument('--scratch', action='store_true', help="Use the scratch folder of snellius")
     parser.add_argument('--dry_run', action='store_true', help="Disable saving the image validation results on every epoch")
     parser.add_argument('--disable_wandb', action='store_true', help="Disable the WandB logging")
     parser.add_argument('--run_on_mac', action='store_true', help="If code runs on mac cpu, some extra configuration needs to be done")
+    parser.add_argument('--all_metrics', action='store_true', help="If off, speeds up computation by only calculating Dice")
 
     # Arguments for more flexibility of the run
     parser.add_argument('--remove_unannotated', action='store_true', help="Remove the unannotated images")

@@ -428,48 +428,59 @@ def wandb_save_model(disabled: bool, model_path, metadata: dict):
 def save_loss_and_metrics(K: int, e: int, dest: Path,
                           loss: [Tensor, Tensor],
                           dice: [Tensor, Tensor],
-                          jaccard: [Tensor, Tensor],
-                          precision: [Tensor, Tensor],
-                          recall: [Tensor, Tensor],
-                          ahd_validation: Tensor,
-                          assd_validation: Tensor) -> dict:
+                          jaccard: [Tensor, Tensor] = None,
+                          precision: [Tensor, Tensor] = None,
+                          recall: [Tensor, Tensor] = None,
+                          ahd_validation: Tensor = None,
+                          assd_validation: Tensor = None) -> dict:
 
     # Save and log metrics and losses
 
     # Save the validation results, for visualization purposes
     np.save(dest / "loss_val.npy", loss[1])
     np.save(dest / "dice_val.npy", dice[1])
-    np.save(dest / "jaccard_val.npy", jaccard[1])
-    np.save(dest / "precision_val.npy", precision[1])
-    np.save(dest / "recall_val.npy", recall[1])
-    np.save(dest / "ahd_val.npy", ahd_validation)
-    np.save(dest / "assd_val.npy", assd_validation)
+    if jaccard:
+        print('Saving all metrics')
+        np.save(dest / "jaccard_val.npy", jaccard[1])
+        np.save(dest / "precision_val.npy", precision[1])
+        np.save(dest / "recall_val.npy", recall[1])
+        np.save(dest / "ahd_val.npy", ahd_validation)
+        np.save(dest / "assd_val.npy", assd_validation)
+        
+        metrics = {
+            "train/loss": loss[0][e, :].mean().item(),
+            "train/dice_avg": dice[0][e, :, 1:].mean().item(),
+            "train/jaccard": jaccard[0][e, :, 1:].mean().item(),
+            "train/precision": precision[0][e, :, 1:].mean().item(),
+            "train/recall": recall[0][e, :, 1:].mean().item(),
 
-    metrics = {
-        "train/loss": loss[0][e, :].mean().item(),
-        "train/dice_avg": dice[0][e, :, 1:].mean().item(),
-        "train/jaccard": jaccard[0][e, :, 1:].mean().item(),
-        "train/precision": precision[0][e, :, 1:].mean().item(),
-        "train/recall": recall[0][e, :, 1:].mean().item(),
+            "valid/loss": loss[1][e, :].mean().item(),
+            "valid/dice_avg": dice[1][e, :, 1:].mean().item(),
+            "valid/jaccard": jaccard[1][e, :, 1:].mean().item(),
+            "valid/precision": precision[1][e, :, 1:].mean().item(),
+            "valid/recall": recall[1][e, :, 1:].mean().item(),
+            "valid/ahd": ahd_validation[e, :, 1:].mean().item(),
+            "valid/assd": assd_validation[e, :].mean().item(),
+        }
+    else:
+        metrics = {
+            "train/loss": loss[0][e, :].mean().item(),
+            "train/dice_avg": dice[0][e, :, 1:].mean().item(),
 
-        "valid/loss": loss[1][e, :].mean().item(),
-        "valid/dice_avg": dice[1][e, :, 1:].mean().item(),
-        "valid/jaccard": jaccard[1][e, :, 1:].mean().item(),
-        "valid/precision": precision[1][e, :, 1:].mean().item(),
-        "valid/recall": recall[1][e, :, 1:].mean().item(),
-        "valid/ahd": ahd_validation[e, :, 1:].mean().item(),
-        "valid/assd": assd_validation[e, :].mean().item(),
-    }
+            "valid/loss": loss[1][e, :].mean().item(),
+            "valid/dice_avg": dice[1][e, :, 1:].mean().item(),
+        }
     for k in range(1, K):
         metrics[f"train/dice-{k}"] = dice[0][e, :, k].mean().item()
         metrics[f"valid/dice-{k}"] = dice[1][e, :, k].mean().item()
-        metrics[f"train/jaccard-{k}"] = jaccard[0][e, :, k].mean().item()
-        metrics[f"valid/jaccard-{k}"] = jaccard[1][e, :, k].mean().item()
-        metrics[f"train/precision-{k}"] = precision[0][e, :, k].mean().item()
-        metrics[f"valid/precision-{k}"] = precision[1][e, :, k].mean().item()
-        metrics[f"train/recall-{k}"] = recall[0][e, :, k].mean().item()
-        metrics[f"valid/recall-{k}"] = recall[1][e, :, k].mean().item()
-        metrics[f"valid/ahd-{k}"] = ahd_validation[e, :, k].mean().item()
+        if jaccard:
+            metrics[f"train/jaccard-{k}"] = jaccard[0][e, :, k].mean().item()
+            metrics[f"valid/jaccard-{k}"] = jaccard[1][e, :, k].mean().item()
+            metrics[f"train/precision-{k}"] = precision[0][e, :, k].mean().item()
+            metrics[f"valid/precision-{k}"] = precision[1][e, :, k].mean().item()
+            metrics[f"train/recall-{k}"] = recall[0][e, :, k].mean().item()
+            metrics[f"valid/recall-{k}"] = recall[1][e, :, k].mean().item()
+            metrics[f"valid/ahd-{k}"] = ahd_validation[e, :, k].mean().item()
     return metrics
 
 
