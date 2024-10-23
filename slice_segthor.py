@@ -98,7 +98,8 @@ def slice_patient(id_: str, dest_path: Path, source_path: Path, shape: tuple[int
         gt_path: Path = id_path / "GT.nii.gz"
         gt_nib = nib.load(str(gt_path))
         # print(nib_obj.affine, gt_nib.affine)
-        gt = np.asarray(gt_nib.dataobj)
+        gt = np.asarray(gt_nib.dataobj, dtype=np.uint8)
+
         assert sanity_gt(gt, ct)
     else:
         gt = np.zeros_like(ct, dtype=np.uint8)

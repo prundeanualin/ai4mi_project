@@ -383,7 +383,7 @@ def main():
     # Arguments for more flexibility of the run
     parser.add_argument('--remove_unannotated', action='store_true', help="Remove the unannotated images")
     parser.add_argument('--loss', default='CrossEntropy',
-                        choices=['CrossEntropy', 'Dice', 'FocalLoss', 'CombinedLoss', 'FocalDiceLoss', 'TverskyLoss'])
+                        choices=['CrossEntropy', 'DiceLoss', 'FocalLoss', 'CombinedLoss', 'TverskyLoss'])
     parser.add_argument('--model', type=str, default='ENet',
                         choices=['ENet', 'shallowCNN', 'UNet', 'UNetPlusPlus', 'DeepLabV3Plus'])
     parser.add_argument('--run_prefix', type=str, default='', help='Name to prepend to the run name')
