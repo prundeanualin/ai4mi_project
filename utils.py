@@ -412,12 +412,12 @@ def wandb_login(disable_wandb: bool):
             raise FileNotFoundError("File wandb.password was not found in the project root. Either add it or disable wandb by running --disable_wandb")
 
 
-def wandb_save_model(disabled: bool, model_path, metadata: dict):
+def wandb_save_model(disabled: bool, run_name: str, model_path, metadata: dict):
     if disabled:
         print(f"WandB disabled, will not save the model weights to its artifacts!")
         pass
     else:
-        artifact = wandb.Artifact("bestmodel.pt", type='model', metadata=metadata)
+        artifact = wandb.Artifact(f"{run_name}.pt", type='model', metadata=metadata)
         artifact.add_file(model_path)
         wandb.run.log_artifact(artifact)
         print("Saved model weights to WandB artifacts")
@@ -425,7 +425,7 @@ def wandb_save_model(disabled: bool, model_path, metadata: dict):
 
 # K - num of classes, e - epoch num
 # Loss and every metric are an array of [train_result, valid_result]
-def save_loss_and_metrics(K: int, e: int, dest: Path,
+def save_loss_and_metrics(K: int, e: int, dest: Path, evaluation: bool,
                           loss: [Tensor, Tensor],
                           dice: [Tensor, Tensor],
                           jaccard: [Tensor, Tensor] = None,
@@ -436,51 +436,45 @@ def save_loss_and_metrics(K: int, e: int, dest: Path,
 
     # Save and log metrics and losses
 
-    # Save the validation results, for visualization purposes
-    np.save(dest / "loss_val.npy", loss[1])
-    np.save(dest / "dice_val.npy", dice[1])
-    if jaccard:
+    if evaluation:
         print('Saving all metrics')
+        # Save the validation results, for visualization purposes
+        np.save(dest / "loss_val.npy", loss[1])
+        np.save(dest / "dice_val.npy", dice[1])
         np.save(dest / "jaccard_val.npy", jaccard[1])
         np.save(dest / "precision_val.npy", precision[1])
         np.save(dest / "recall_val.npy", recall[1])
         np.save(dest / "ahd_val.npy", ahd_validation)
         np.save(dest / "assd_val.npy", assd_validation)
         
-        metrics = {
-            "train/loss": loss[0][e, :].mean().item(),
-            "train/dice_avg": dice[0][e, :, 1:].mean().item(),
-            "train/jaccard": jaccard[0][e, :, 1:].mean().item(),
-            "train/precision": precision[0][e, :, 1:].mean().item(),
-            "train/recall": recall[0][e, :, 1:].mean().item(),
+    metrics = {
+        "train/loss": loss[0][e, :].mean().item(),
+        "train/dice_avg": dice[0][e, :, 1:].mean().item(),
+        "train/jaccard": jaccard[0][e, :, 1:].mean().item(),
+        "train/precision": precision[0][e, :, 1:].mean().item(),
+        "train/recall": recall[0][e, :, 1:].mean().item(),
 
-            "valid/loss": loss[1][e, :].mean().item(),
-            "valid/dice_avg": dice[1][e, :, 1:].mean().item(),
-            "valid/jaccard": jaccard[1][e, :, 1:].mean().item(),
-            "valid/precision": precision[1][e, :, 1:].mean().item(),
-            "valid/recall": recall[1][e, :, 1:].mean().item(),
-            "valid/ahd": ahd_validation[e, :, 1:].mean().item(),
-            "valid/assd": assd_validation[e, :].mean().item(),
-        }
-    else:
-        metrics = {
-            "train/loss": loss[0][e, :].mean().item(),
-            "train/dice_avg": dice[0][e, :, 1:].mean().item(),
+        "valid/loss": loss[1][e, :].mean().item(),
+        "valid/dice_avg": dice[1][e, :, 1:].mean().item(),
+        "valid/jaccard": jaccard[1][e, :, 1:].mean().item(),
+        "valid/precision": precision[1][e, :, 1:].mean().item(),
+        "valid/recall": recall[1][e, :, 1:].mean().item(),
+        "valid/ahd": ahd_validation[e, :, 1:].mean().item(),
+        "valid/assd": assd_validation[e, :].mean().item(),
+    }
 
-            "valid/loss": loss[1][e, :].mean().item(),
-            "valid/dice_avg": dice[1][e, :, 1:].mean().item(),
-        }
     for k in range(1, K):
         metrics[f"train/dice-{k}"] = dice[0][e, :, k].mean().item()
         metrics[f"valid/dice-{k}"] = dice[1][e, :, k].mean().item()
-        if jaccard:
-            metrics[f"train/jaccard-{k}"] = jaccard[0][e, :, k].mean().item()
-            metrics[f"valid/jaccard-{k}"] = jaccard[1][e, :, k].mean().item()
-            metrics[f"train/precision-{k}"] = precision[0][e, :, k].mean().item()
-            metrics[f"valid/precision-{k}"] = precision[1][e, :, k].mean().item()
-            metrics[f"train/recall-{k}"] = recall[0][e, :, k].mean().item()
-            metrics[f"valid/recall-{k}"] = recall[1][e, :, k].mean().item()
-            metrics[f"valid/ahd-{k}"] = ahd_validation[e, :, k].mean().item()
+
+        metrics[f"train/jaccard-{k}"] = jaccard[0][e, :, k].mean().item()
+        metrics[f"valid/jaccard-{k}"] = jaccard[1][e, :, k].mean().item()
+        metrics[f"train/precision-{k}"] = precision[0][e, :, k].mean().item()
+        metrics[f"valid/precision-{k}"] = precision[1][e, :, k].mean().item()
+        metrics[f"train/recall-{k}"] = recall[0][e, :, k].mean().item()
+        metrics[f"valid/recall-{k}"] = recall[1][e, :, k].mean().item()
+        metrics[f"valid/ahd-{k}"] = ahd_validation[e, :, k].mean().item()
+
     return metrics
 
 

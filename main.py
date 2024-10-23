@@ -61,10 +61,9 @@ from utils import (Dcm,
 
 from losses import create_loss_fn
 
-import wandb #TODO: remove all wandb instances on final submission
+import wandb  #TODO: remove all wandb instances on final submission
 from losses import (CrossEntropy)
 import matplotlib.pyplot as plt
-
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -73,7 +72,8 @@ datasets_params["TOY2"] = {'K': 2, 'net': shallowCNN, 'B': 2}
 datasets_params["SEGTHOR"] = {'K': 5, 'net': ENet, 'B': 8}
 
 
-def setup(args) -> tuple[nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler, Any, DataLoader, DataLoader, int]:
+def setup(args) -> tuple[
+    nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler, Any, DataLoader, DataLoader, int]:
     # Device setup
     gpu: bool = args.gpu and torch.cuda.is_available()
     device = torch.device("cuda") if gpu else torch.device("cpu")
@@ -88,7 +88,7 @@ def setup(args) -> tuple[nn.Module, torch.optim.Optimizer, torch.optim.lr_schedu
     # Setup of the root folder
     if args.scratch:
         tmpdir = environ["TMPDIR"]
-        root_dir = Path(tmpdir+"/data") / args.dataset
+        root_dir = Path(tmpdir + "/data") / args.dataset
     else:
         root_dir = Path("data") / args.dataset
 
@@ -132,8 +132,10 @@ def setup(args) -> tuple[nn.Module, torch.optim.Optimizer, torch.optim.lr_schedu
     optimizer = torch.optim.AdamW(net.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=args.lr_weight_decay)
     scheduler = None
     if args.enable_lr_scheduler:
-        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, lr, epochs=args.epochs, steps_per_epoch=len(train_loader))
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, lr, epochs=args.epochs,
+                                                        steps_per_epoch=len(train_loader))
     return net, optimizer, scheduler, device, train_loader, val_loader, K
+
 
 #TODO Decide necessity of this?
 def skip_empty_masks(gt: Tensor, pred_seg: Tensor) -> bool:
@@ -144,8 +146,7 @@ def skip_empty_masks(gt: Tensor, pred_seg: Tensor) -> bool:
     return gt.sum().item() == 0 and pred_seg.sum().item() == 0
 
 
-def run_model(args):
-
+def run_model(args, run_name: str):
     # This will load the saved model and just run the evaluation on the validation set
     if args.evaluation:
         args.epochs = 1
@@ -167,17 +168,19 @@ def run_model(args):
 
     log_loss_tra, log_loss_val = per_batch(train_loader), per_batch(val_loader)
     dice_tra, dice_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-    if args.all_metrics:
-        # Extra metrics to monitor training
-        precision_tra, precision_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-        recall_tra, recall_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-        jacc_tra, jacc_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
-        # Validation metrics (too expensive to apply on every sample during train)
-        ahd_val: Tensor = per_sample_and_class(val_loader)
-        assd_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset)))
+
+    # Extra metrics to monitor training
+    precision_tra, precision_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
+    recall_tra, recall_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
+    jacc_tra, jacc_val = per_sample_and_class(train_loader), per_sample_and_class(val_loader)
+
+    # Validation metrics (too expensive to apply on every sample during train)
+    ahd_val: Tensor = per_sample_and_class(val_loader)
+    assd_val: Tensor = torch.zeros((args.epochs, len(val_loader.dataset)))
 
     best_dice: float = 0
     best_metrics = {}
+    patience = args.patience
 
     for e in range(args.epochs):
         for m in modes:
@@ -190,10 +193,9 @@ def run_model(args):
                     loader = train_loader
                     log_loss = log_loss_tra
                     dice = dice_tra
-                    if args.all_metrics:
-                        precision = precision_tra
-                        recall = recall_tra
-                        jaccard = jacc_tra
+                    precision = precision_tra
+                    recall = recall_tra
+                    jaccard = jacc_tra
 
                 case 'val':
                     net.eval()
@@ -203,10 +205,9 @@ def run_model(args):
                     loader = val_loader
                     log_loss = log_loss_val
                     dice = dice_val
-                    if args.all_metrics:
-                        precision = precision_val
-                        recall = recall_val
-                        jaccard = jacc_val
+                    precision = precision_val
+                    recall = recall_val
+                    jaccard = jacc_val
 
             with cm():  # Either dummy context manager, or the torch.no_grad for validation
                 j = 0
@@ -229,10 +230,9 @@ def run_model(args):
                     pred_seg = probs2one_hot(pred_probs)
                     # One metric value (DSC, Jaccard, Precision, Recall) per sample and per class
                     dice[e, j:j + B, :] = dice_coef(gt, pred_seg)
-                    if args.all_metrics:
-                        jaccard[e, j:j + B, :] = jaccard_coef(gt, pred_seg)
-                        precision[e, j:j + B, :] = compute_precision(gt, pred_seg)
-                        recall[e, j:j + B, :] = compute_recall(gt, pred_seg)
+                    jaccard[e, j:j + B, :] = jaccard_coef(gt, pred_seg)
+                    precision[e, j:j + B, :] = compute_precision(gt, pred_seg)
+                    recall[e, j:j + B, :] = compute_recall(gt, pred_seg)
 
                     pred_seg = pred_seg.to(device)
                     gt = gt.to(device)
@@ -260,17 +260,17 @@ def run_model(args):
                                     batch_idx].shape, "Shape mismatch between GT and prediction"  # Check that the shapes are identical
 
                                 # Computing AHD per class for each batch
-                                if args.all_metrics:
-                                    ahd_values_per_class = average_hausdorff_distance_per_class(gt[batch_idx],
-                                                                                                pred_seg[batch_idx], K)
-                                    for k in range(K):
-                                        if ahd_values_per_class[k] != float('inf'):  # Skipping 'inf' values
-                                            ahd_val[e, j + batch_idx, k] = ahd_values_per_class[k]
+                                ahd_values_per_class = average_hausdorff_distance_per_class(gt[batch_idx],
+                                                                                            pred_seg[batch_idx], K)
+                                for k in range(K):
+                                    if ahd_values_per_class[k] != float('inf'):  # Skipping 'inf' values
+                                        ahd_val[e, j + batch_idx, k] = ahd_values_per_class[k]
 
                                 # ahd_value = average_hausdorff_distance(gt[batch_idx], pred_seg[batch_idx]) #Old AHD metric
                                 # log_ahd[e, j + batch_idx, :] = ahd_value
-                                    assd_sample_value = average_symmetric_surface_distance(gt[batch_idx], pred_seg[batch_idx])
-                                    assd_val[e, j + batch_idx] = assd_sample_value
+                                assd_sample_value = average_symmetric_surface_distance(gt[batch_idx],
+                                                                                       pred_seg[batch_idx])
+                                assd_val[e, j + batch_idx] = assd_sample_value
 
                         # Save the predictions for the validation set
                         if not args.dry_run:
@@ -292,19 +292,14 @@ def run_model(args):
                                          for k in range(1, K)}
                     tq_iter.set_postfix(postfix_dict)
 
-        if args.all_metrics:
-            metrics = utils.save_loss_and_metrics(K, e, args.dest,
-                                                loss=[log_loss_tra, log_loss_val],
-                                                dice=[dice_tra, dice_val],
-                                                jaccard=[jacc_tra, jacc_val],
-                                                precision=[precision_tra, precision_val],
-                                                recall=[recall_tra, recall_val],
-                                                ahd_validation=ahd_val,
-                                                assd_validation=assd_val)
-        else:
-            metrics = utils.save_loss_and_metrics(K, e, args.dest,
-                                                loss=[log_loss_tra, log_loss_val],
-                                                dice=[dice_tra, dice_val])
+        metrics = utils.save_loss_and_metrics(K, e, args.dest, args.evaluation,
+                                              loss=[log_loss_tra, log_loss_val],
+                                              dice=[dice_tra, dice_val],
+                                              jaccard=[jacc_tra, jacc_val],
+                                              precision=[precision_tra, precision_val],
+                                              recall=[recall_tra, recall_val],
+                                              ahd_validation=ahd_val,
+                                              assd_validation=assd_val)
         wandb.log(metrics)
 
         current_dice: float = dice_val[e, :, 1:].mean().item()
@@ -314,22 +309,23 @@ def run_model(args):
             print(f">>> Improved dice at epoch {e}: {best_dice:05.3f}->{current_dice:05.3f} DSC")
             best_dice = current_dice
             with open(args.dest / "best_epoch.txt", 'w') as f:
-                    f.write(str(e))
+                f.write(str(e))
 
             if not args.dry_run:
                 best_folder = args.dest / "best_epoch"
                 if best_folder.exists():
-                        rmtree(best_folder)
+                    rmtree(best_folder)
                 copytree(args.dest / f"iter{e:03d}", Path(best_folder))
 
             torch.save(net, args.dest / "bestmodel.pkl")
             best_weights_path = args.dest / "bestweights.pt"
             torch.save(net.state_dict(), best_weights_path)
-            utils.wandb_save_model(args.disable_wandb, best_weights_path, {'Epoch': e, 'Dice Validation Avg': best_dice})
+            utils.wandb_save_model(args.disable_wandb, run_name, best_weights_path,
+                                   {'Epoch': e, 'Dice Validation Avg': best_dice})
             best_metrics = metrics
             # Reset patience counter for early stopping
             patience = args.patience
-        elif args.patience:
+        elif patience is not None:
             # Used in early stopping
             patience -= 1
             if patience == 0:
@@ -351,7 +347,8 @@ def main():
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights). "
                              "If in evaluation mode, then this is the directory where the results are saved.")
-    parser.add_argument('--seed', default=42, type=int, help='Random seed to use for reproducibility of the experiments')
+    parser.add_argument('--seed', default=42, type=int,
+                        help='Random seed to use for reproducibility of the experiments')
 
     parser.add_argument('--num_workers', type=int, default=5)
     parser.add_argument('--gpu', action='store_true')
@@ -364,7 +361,8 @@ def main():
 
     parser.add_argument('--dropoutRate', type=float, default=0.2, help="Dropout rate for the ENet model")
     parser.add_argument('--lr', type=float, default=0.0005, help="Learning rate")
-    parser.add_argument('--lr_weight_decay', type=float, default=0.1, help="Weight decay factor for the AdamW optimizer")
+    parser.add_argument('--lr_weight_decay', type=float, default=0.1,
+                        help="Weight decay factor for the AdamW optimizer")
     parser.add_argument('--enable_lr_scheduler', action='store_true')
 
     parser.add_argument('--alpha', type=float, default=0.7, help="Alpha parameter for loss functions")
@@ -375,21 +373,28 @@ def main():
 
     # Optimize snellius batch job
     parser.add_argument('--scratch', action='store_true', help="Use the scratch folder of snellius")
-    parser.add_argument('--dry_run', action='store_true', help="Disable saving the image validation results on every epoch")
+    parser.add_argument('--dry_run', action='store_true',
+                        help="Disable saving the image validation results on every epoch")
     parser.add_argument('--disable_wandb', action='store_true', help="Disable the WandB logging")
-    parser.add_argument('--run_on_mac', action='store_true', help="If code runs on mac cpu, some extra configuration needs to be done")
-    parser.add_argument('--all_metrics', action='store_true', help="If off, speeds up computation by only calculating Dice")
+    parser.add_argument('--run_on_mac', action='store_true',
+                        help="If code runs on mac cpu, some extra configuration needs to be done")
+    parser.add_argument('--all_metrics', action='store_true',
+                        help="If off, speeds up computation by only calculating Dice")
 
     # Arguments for more flexibility of the run
     parser.add_argument('--remove_unannotated', action='store_true', help="Remove the unannotated images")
-    parser.add_argument('--loss', default='CrossEntropy', choices=['CrossEntropy', 'Dice', 'FocalLoss', 'CombinedLoss', 'FocalDiceLoss', 'TverskyLoss'])
-    parser.add_argument('--model', type=str, default='ENet', choices=['ENet', 'shallowCNN', 'UNet', 'UNetPlusPlus', 'DeepLabV3Plus'])
+    parser.add_argument('--loss', default='CrossEntropy',
+                        choices=['CrossEntropy', 'Dice', 'FocalLoss', 'CombinedLoss', 'FocalDiceLoss', 'TverskyLoss'])
+    parser.add_argument('--model', type=str, default='ENet',
+                        choices=['ENet', 'shallowCNN', 'UNet', 'UNetPlusPlus', 'DeepLabV3Plus'])
     parser.add_argument('--run_prefix', type=str, default='', help='Name to prepend to the run name')
     parser.add_argument('--run_group', type=str, default=None, help='Your name so that the run can be grouped by it')
 
     # Arguments for running with different backbones
-    parser.add_argument('--encoder_name', type=str, default='resnet18', choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'])
-    parser.add_argument('--unfreeze_enc_last_n_layers', type=int, default=1, help="Train the last n layers of the encoder")
+    parser.add_argument('--encoder_name', type=str, default='resnet18',
+                        choices=['resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152'])
+    parser.add_argument('--unfreeze_enc_last_n_layers', type=int, default=1,
+                        help="Train the last n layers of the encoder")
 
     args = parser.parse_args()
     run_name = utils.get_run_name(args, parser)
@@ -402,7 +407,7 @@ def main():
     if args.run_on_mac:
         # Added since for python 3.8+, OS X multiprocessing starts processes with spawn instead of fork
         # see https://github.com/pytest-dev/pytest-flask/issues/104
-        multiprocessing.set_start_method("fork") #TODO remove on final submission
+        multiprocessing.set_start_method("fork")  #TODO remove on final submission
 
     utils.wandb_login(args.disable_wandb)
     wandb.init(
@@ -416,7 +421,7 @@ def main():
 
     print(f">> {run_name} <<")
     pprint(args)
-    run_model(args)
+    run_model(args, run_name)
 
 
 if __name__ == '__main__':
