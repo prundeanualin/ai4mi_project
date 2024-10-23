@@ -146,7 +146,7 @@ def skip_empty_masks(gt: Tensor, pred_seg: Tensor) -> bool:
     return gt.sum().item() == 0 and pred_seg.sum().item() == 0
 
 
-def run_model(args, run_name: str):
+def run_model(args):
     # This will load the saved model and just run the evaluation on the validation set
     if args.evaluation:
         args.epochs = 1
@@ -320,8 +320,7 @@ def run_model(args, run_name: str):
             torch.save(net, args.dest / "bestmodel.pkl")
             best_weights_path = args.dest / "bestweights.pt"
             torch.save(net.state_dict(), best_weights_path)
-            utils.wandb_save_model(args.disable_wandb, run_name, best_weights_path,
-                                   {'Epoch': e, 'Dice Validation Avg': best_dice})
+            utils.wandb_save_model(args.disable_wandb, f"{args.model}_E{e}_DSC{best_dice:0.3f}", best_weights_path)
             best_metrics = metrics
             # Reset patience counter for early stopping
             patience = args.patience
@@ -421,7 +420,7 @@ def main():
 
     print(f">> {run_name} <<")
     pprint(args)
-    run_model(args, run_name)
+    run_model(args)
 
 
 if __name__ == '__main__':
