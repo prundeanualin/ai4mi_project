@@ -412,12 +412,12 @@ def wandb_login(disable_wandb: bool):
             raise FileNotFoundError("File wandb.password was not found in the project root. Either add it or disable wandb by running --disable_wandb")
 
 
-def wandb_save_model(disabled: bool, model_name: str, model_path, metadata: dict):
+def wandb_save_model(disabled: bool, save_name: str, model_path):
     if disabled:
         print(f"WandB disabled, will not save the model weights to its artifacts!")
         pass
     else:
-        artifact = wandb.Artifact(f"{model_name}.pt", type='model', metadata=metadata)
+        artifact = wandb.Artifact(f"{save_name}.pt", type='model')
         artifact.add_file(model_path)
         wandb.run.log_artifact(artifact)
         print("Saved model weights to WandB artifacts")
