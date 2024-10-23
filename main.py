@@ -340,7 +340,7 @@ def run_model(args):
 def main():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--epochs', default=200, type=int)
+    parser.add_argument('--epochs', default=100, type=int)
     parser.add_argument('--dataset', default='SEGTHOR', choices=datasets_params.keys())
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
     parser.add_argument('--dest', type=Path, required=True,
@@ -377,8 +377,6 @@ def main():
     parser.add_argument('--disable_wandb', action='store_true', help="Disable the WandB logging")
     parser.add_argument('--run_on_mac', action='store_true',
                         help="If code runs on mac cpu, some extra configuration needs to be done")
-    parser.add_argument('--all_metrics', action='store_true',
-                        help="If off, speeds up computation by only calculating Dice")
 
     # Arguments for more flexibility of the run
     parser.add_argument('--remove_unannotated', action='store_true', help="Remove the unannotated images")
