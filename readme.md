@@ -65,6 +65,7 @@ $ mv data/SEGTHOR_tmp data/SEGTHOR
 ### Viewing the data
 The data can be viewed in different ways:
 - looking directly at the `.png` in the sliced folder (`data/SEGTHOR`);
+- running the jupyter notebook that produces the graphs reported in the submitted paper ([see below](#report-graphs));
 - using the provided "viewer" to compare segmentations ([see below](#viewing-the-results));
 - opening the Nifti files from `data/segthor_train` with [3D Slicer](https://www.slicer.org/) or [ITK Snap](http://www.itksnap.org).
 
@@ -73,40 +74,45 @@ Running a training
 ```
 $ python main.py --help
 
-usage: main.py [-h] [--epochs EPOCHS] [--dataset {TOY2,SEGTHOR}] [--mode {partial,full}] --dest DEST [--seed SEED] [--num_workers NUM_WORKERS] [--gpu] [--debug] [--evaluation] 
-               [--dropoutRate DROPOUTRATE] [--lr LR] [--lr_weight_decay LR_WEIGHT_DECAY] [--enable_lr_scheduler] [--alpha ALPHA] [--beta BETA] [--focal_alpha FOCAL_ALPHA] 
-               [--focal_gamma FOCAL_GAMMA] [--scratch] [--dry_run] [--run_on_mac] [--remove_unannotated] [--loss {CrossEntropy,Dice,FocalLoss,CombinedLoss,FocalDiceLoss,TverskyLoss}] 
-               [--model {ENet,shallowCNN,UNet,UNetPlusPlus,DeepLabV3Plus}] [--run_prefix RUN_PREFIX] [--run_group RUN_GROUP] 
-               [--encoder_name {resnet18,resnet34,resnet50,resnet101,resnet152}] [--unfreeze_enc_last_n_layers UNFREEZE_ENC_LAST_N_LAYERS]
+usage: main.py [-h] [--epochs EPOCHS] [--dataset {TOY2,SEGTHOR}] [--mode {partial,full}] --dest DEST [--seed SEED] [--num_workers NUM_WORKERS] [--gpu] [--debug] [--evaluation] [--dropoutRate DROPOUTRATE] [--lr LR] [--lr_weight_decay LR_WEIGHT_DECAY] [--disable_lr_scheduler] [--alpha ALPHA] [--beta BETA] [--focal_alpha FOCAL_ALPHA] [--focal_gamma FOCAL_GAMMA] [--patience PATIENCE] [--scratch] [--dry_run]
+               [--remove_unannotated] [--loss {CrossEntropy,DiceLoss,FocalLoss,CombinedLoss,TverskyLoss}] [--model {ENet,shallowCNN,UNet,UNetPlusPlus,DeepLabV3Plus}] [--run_prefix RUN_PREFIX] [--encoder_name {resnet18,resnet34,resnet50,resnet101,resnet152}] [--unfreeze_enc_last_n_layers UNFREEZE_ENC_LAST_N_LAYERS]
 
 options:
   -h, --help            show this help message and exit
   --epochs EPOCHS
-  --dataset                          {TOY2,SEGTHOR}
-  --mode                             {partial,full}
-  --dest DEST                        Destination directory to save the results (predictions and weights). If in evaluation mode, then this is the directory where the results are saved.
-  --seed SEED                        Random seed to use for reproducibility of the experiments
-  --num_workers                      How many workers to be assigned to the dataloader
+  --dataset {TOY2,SEGTHOR}
+  --mode {partial,full}
+  --dest DEST           Destination directory to save the results (predictions and weights). If in evaluation mode, then this is the directory where the results are saved.
+  --seed SEED           Random seed to use for reproducibility of the experiments
+  --num_workers NUM_WORKERS
   --gpu
-  --debug                            Keep only a fraction (10 samples) of the datasets, to test the logic around epochs and logging easily.
-  --evaluation                       Will load the model from the dest_results and evaluate it on the validation set, with all the available metrics.
-  --dropoutRate                      Dropout rate for the ENet model
-  --lr LR                            Learning rate
-  --lr_weight_decay                  Weight decay factor for the AdamW optimizer
-  --enable_lr_scheduler              Enable the OneCycle LR scheduler
-  --alpha                            Alpha parameter for loss functions
-  --beta                             Beta parameter for loss functions
-  --focal_alpha                      Alpha parameter for Focal Loss
-  --focal_gamma                      Gamma parameter for Focal Loss
-  --scratch                          Use the scratch folder of snellius
-  --dry_run                          Disable saving the image validation results on every epoch
-  --run_on_mac                       If code runs on mac cpu, some extra configuration needs to be done
-  --remove_unannotated               Remove the unannotated images
-  --loss                             {CrossEntropy,Dice,FocalLoss,CombinedLoss,FocalDiceLoss,TverskyLoss}
-  --model                            {ENet,shallowCNN,UNet,UNetPlusPlus,DeepLabV3Plus}
-  --run_prefix                       Name to prepend to the run name
-  --encoder_name                     {resnet18,resnet34,resnet50,resnet101,resnet152}
-  --unfreeze_enc_last_n_layers       Train the last n layers of the encoder
+  --debug               Keep only a fraction (10 samples) of the datasets, to test the logic around epochs and logging easily.
+  --evaluation          Will load the model from the dest_results and evaluate it on the validation set, with all the available metrics.
+  --dropoutRate DROPOUTRATE
+                        Dropout rate for the ENet model
+  --lr LR               Learning rate
+  --lr_weight_decay LR_WEIGHT_DECAY
+                        Weight decay factor for the AdamW optimizer
+  --disable_lr_scheduler
+                        Disable OneCycle learning rate scheduler
+  --alpha ALPHA         Alpha parameter for loss functions
+  --beta BETA           Beta parameter for loss functions
+  --focal_alpha FOCAL_ALPHA
+                        Alpha parameter for Focal Loss
+  --focal_gamma FOCAL_GAMMA
+                        Gamma parameter for Focal Loss
+  --patience PATIENCE   Patience for early stopping
+  --scratch             Use the scratch folder of snellius
+  --dry_run             Disable saving the image validation results on every epoch
+  --remove_unannotated  Remove the unannotated images
+  --loss {CrossEntropy,DiceLoss,FocalLoss,CombinedLoss,TverskyLoss}
+  --model {ENet,shallowCNN,UNet,UNetPlusPlus,DeepLabV3Plus}
+  --run_prefix RUN_PREFIX
+                        Name to prepend to the run name
+  --encoder_name {resnet18,resnet34,resnet50,resnet101,resnet152}
+  --unfreeze_enc_last_n_layers UNFREEZE_ENC_LAST_N_LAYERS
+                        Train the last n layers of the encoder
+
 
 
 $ python main.py --dataset TOY2 --mode full --epoch 25 --dest results/toy2/ce --gpu
@@ -116,6 +122,36 @@ The codebase uses a lot of assertions for control and self-documentation, they c
 ```
 $ python -O main.py --dataset TOY2 --mode full --epoch 25 --dest results/toy2/ce --gpu
 ```
+
+### Replicating the results from the report
+
+In order to obtain the same results we used in our report, the following training commands should be executed:
+- For Baseline-ENet:
+```
+$ python -O main.py --gpu --dest results/segthor --epochs 200 --dropoutRate 0.1 --lr_weight_decay 0.01 --disable_lr_scheduler --model ENet
+```
+All of the experiments running with the Baseline-ENet (study on different loss functions, data augmentations) use the command above as a starter and then add additional flags as needed.
+
+- For Best-ENet:
+```
+$ python -O main.py --gpu --dest results/segthor --model ENet --loss CombinedLoss
+```
+- For UNet
+```
+$ python -O main.py --gpu --dest results/segthor --model UNet --loss CombinedLoss
+```
+
+- For UNetPlusPlus
+```
+$ python -O main.py --gpu --dest results/segthor --model UNetPlusPlus --loss CombinedLoss
+```
+
+- For DeepLabV3Plus
+```
+$ python -O main.py --gpu --dest results/segthor --model DeepLabV3Plus --loss CombinedLoss
+```
+
+TIP: The parameters where the default value has been used are intentionally omitted from the commands above.
 
 ### Evaluating a network
 
@@ -129,6 +165,9 @@ Where:
 - `chosen_model` - the model to load from the checkpoint file
 
 ### Viewing the results
+#### Report graphs
+In order to generate the graphs used in the report, you should run the `plot.ipynb` jupyter notebook.
+
 #### 2D viewer
 Comparing some predictions with the provided [viewer](viewer/viewer.py) (right-click to go to the next set of images, left-click to go back):
 ```

@@ -28,12 +28,10 @@ import time
 import warnings
 from copy import deepcopy
 from typing import Any
-from pathlib import Path
 from pprint import pprint
 from shutil import copytree, rmtree
 from os import environ
 
-import torch
 import numpy as np
 import torch.nn.functional as F
 from torch import Tensor
@@ -51,19 +49,14 @@ from utils import (Dcm,
                    tqdm_,
                    dice_coef,
                    jaccard_coef,
-                   average_hausdorff_distance,
                    average_hausdorff_distance_per_class,
                    average_symmetric_surface_distance,
                    compute_precision,
                    compute_recall,
-                   visualize_sample,
                    save_images)
 
 from losses import create_loss_fn
 
-import wandb  #TODO: remove all wandb instances on final submission
-from losses import (CrossEntropy)
-import matplotlib.pyplot as plt
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -131,19 +124,10 @@ def setup(args) -> tuple[
     lr = args.lr
     optimizer = torch.optim.AdamW(net.parameters(), lr=lr, betas=(0.9, 0.999), weight_decay=args.lr_weight_decay)
     scheduler = None
-    if args.enable_lr_scheduler:
+    if not args.disable_lr_scheduler:
         scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, lr, epochs=args.epochs,
                                                         steps_per_epoch=len(train_loader))
     return net, optimizer, scheduler, device, train_loader, val_loader, K
-
-
-#TODO Decide necessity of this?
-def skip_empty_masks(gt: Tensor, pred_seg: Tensor) -> bool:
-    """
-    Returns True if both ground truth & predicted segmentation masks are empty,
-    Useful for AHD metric - patients with multiple sliced images.
-    """
-    return gt.sum().item() == 0 and pred_seg.sum().item() == 0
 
 
 def run_model(args):
@@ -180,7 +164,6 @@ def run_model(args):
 
     predicted_segmentations = torch.zeros((len(val_loader.dataset), 5, 256, 256))
     best_dice: float = 0
-    best_metrics = {}
     patience = args.patience
 
     for e in range(args.epochs):
@@ -303,7 +286,6 @@ def run_model(args):
                                               recall=[recall_tra, recall_val],
                                               ahd_validation=ahd_val,
                                               assd_validation=assd_val)
-        wandb.log(metrics)
 
         current_dice: float = dice_val[e, :, 1:].mean().item()
         if args.evaluation:
@@ -324,7 +306,6 @@ def run_model(args):
             torch.save(net, args.dest / "bestmodel.pkl")
             best_weights_path = args.dest / "bestweights.pt"
             torch.save(net.state_dict(), best_weights_path)
-            utils.wandb_save_model(args.disable_wandb, f"{args.model}_E{e}_DSC{best_dice:0.3f}", best_weights_path)
             best_metrics = metrics
             # Reset patience counter for early stopping
             patience = args.patience
@@ -335,8 +316,6 @@ def run_model(args):
                 print("Early Stopping patience reached.")
                 break
 
-    for key, value in best_metrics.items():
-        wandb.run.summary[key] = value
     end = time.time()
     print(f"[FINISHED] Duration: {(end - start):0.2f} s")
 
@@ -366,7 +345,7 @@ def main():
     parser.add_argument('--lr', type=float, default=0.0005, help="Learning rate")
     parser.add_argument('--lr_weight_decay', type=float, default=0.1,
                         help="Weight decay factor for the AdamW optimizer")
-    parser.add_argument('--enable_lr_scheduler', action='store_true')
+    parser.add_argument('--disable_lr_scheduler', action='store_true', help="Disable OneCycle learning rate scheduler")
 
     parser.add_argument('--alpha', type=float, default=0.7, help="Alpha parameter for loss functions")
     parser.add_argument('--beta', type=float, default=0.3, help="Beta parameter for loss functions")
@@ -378,9 +357,6 @@ def main():
     parser.add_argument('--scratch', action='store_true', help="Use the scratch folder of snellius")
     parser.add_argument('--dry_run', action='store_true',
                         help="Disable saving the image validation results on every epoch")
-    parser.add_argument('--disable_wandb', action='store_true', help="Disable the WandB logging")
-    parser.add_argument('--run_on_mac', action='store_true',
-                        help="If code runs on mac cpu, some extra configuration needs to be done")
 
     # Arguments for more flexibility of the run
     parser.add_argument('--remove_unannotated', action='store_true', help="Remove the unannotated images")
@@ -389,7 +365,6 @@ def main():
     parser.add_argument('--model', type=str, default='ENet',
                         choices=['ENet', 'shallowCNN', 'UNet', 'UNetPlusPlus', 'DeepLabV3Plus'])
     parser.add_argument('--run_prefix', type=str, default='', help='Name to prepend to the run name')
-    parser.add_argument('--run_group', type=str, default=None, help='Your name so that the run can be grouped by it')
 
     # Arguments for running with different backbones
     parser.add_argument('--encoder_name', type=str, default='resnet18',
@@ -401,24 +376,6 @@ def main():
     run_name = utils.get_run_name(args, parser)
     if not args.evaluation:
         args.dest = args.dest / run_name
-    else:
-        # Disable WandB by default if in evaluation mode
-        args.disable_wandb = True
-
-    if args.run_on_mac:
-        # Added since for python 3.8+, OS X multiprocessing starts processes with spawn instead of fork
-        # see https://github.com/pytest-dev/pytest-flask/issues/104
-        multiprocessing.set_start_method("fork")  #TODO remove on final submission
-
-    utils.wandb_login(args.disable_wandb)
-    wandb.init(
-        entity="ai_4_mi",
-        project="SegTHOR",
-        name=run_name,
-        config=vars(args),
-        mode="disabled" if args.disable_wandb else "online",
-        group=args.run_group
-    )
 
     print(f">> {run_name} <<")
     pprint(args)
