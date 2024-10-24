@@ -29,7 +29,6 @@ from multiprocessing import Pool
 from contextlib import AbstractContextManager
 from typing import Callable, Iterable, List, Set, Tuple, TypeVar, cast
 
-import wandb
 import random
 import torch
 import numpy as np
@@ -39,8 +38,6 @@ from tqdm import tqdm
 from torch import Tensor, einsum
 from scipy.spatial.distance import directed_hausdorff
 from skimage.segmentation import find_boundaries
-
-import os  #TODO: remove on final submission
 
 tqdm_ = partial(tqdm, dynamic_ncols=True,
                 leave=True,
@@ -396,31 +393,6 @@ def visualize_sample(gt: Tensor, pred: Tensor, epoch: int, batch_idx: int):
     save_path = Path("results/segthor/ce")  / f"epoch_{epoch}_batch_{batch_idx}.png"
     plt.savefig(save_path)
     plt.close()  # Close the figure to avoid memory issues
-
-
-def wandb_login(disable_wandb: bool):
-    if disable_wandb:
-        print("!! WandB disabled !!")
-        return
-    else:
-        try:
-            with open("wandb.password", "rt") as f:
-                pw = f.readline().strip()
-                os.environ["WANDB_API_KEY"] = pw
-                wandb.login()
-        except FileNotFoundError:
-            raise FileNotFoundError("File wandb.password was not found in the project root. Either add it or disable wandb by running --disable_wandb")
-
-
-def wandb_save_model(disabled: bool, save_name: str, model_path):
-    if disabled:
-        print(f"WandB disabled, will not save the model weights to its artifacts!")
-        pass
-    else:
-        artifact = wandb.Artifact(f"{save_name}.pt", type='model')
-        artifact.add_file(model_path)
-        wandb.run.log_artifact(artifact)
-        print("Saved model weights to WandB artifacts")
 
 
 # K - num of classes, e - epoch num
